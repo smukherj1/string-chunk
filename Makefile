@@ -10,3 +10,6 @@ test: chunk_test
 
 clean:
 	-rm chunk_test
+
+format:
+	clang-format -i chunk_manager_sys.h chunk_manager_test.cpp

@@ -1,107 +1,157 @@
 #ifndef CHUNK_MANAGER_SYS_H
 #define CHUNK_MANAGER_SYS_H
 
-#include <vector>
+#include <cstring>
 #include <memory>
 #include <string>
-#include <cstring>
+#include <vector>
 
 namespace gen
 {
-	namespace detail
-	{
-		class ChunkNode
-    	{
-    	public:
-    		ChunkNode(const size_t len)
-    		{
-    			m_buf.reset(new char[len]);
-    			m_end = m_buf.get() + len;
-    			m_cur = m_buf.get();
-    		}
+namespace detail
+{
 
-    		// Suboptimal so deleted to detect
-    		// inadvertent copying
-    		ChunkNode(const ChunkNode& rhs) = delete;
-    		ChunkNode& operator = (const ChunkNode& rhs) = delete;
-
-
-    		ChunkNode(ChunkNode&& rhs) = default;
-    		ChunkNode& operator = (ChunkNode&& rhs) = default;
-
-    		size_t space() const { return m_end - m_cur; }
-
-    		const char* store(const char * const str, std::size_t len)
-    		{
-    			char *cur = m_cur;
-    			std::memcpy(m_cur, str, len);
-    			m_cur += len;
-    			return cur;
-    		}
-
-    	private:
-    		std::unique_ptr<char[]> m_buf;
-    		char *m_end;
-    		char *m_cur;
-    	};
-
-	} /* namespace detail */
-
-    template <std::size_t ChunkSize>
-	class GreedyStoragePolicy
-	{
-	protected:
-		const char* execute(const char *str, std::size_t len, std::vector<detail::ChunkNode>& chunks ) const
-		{
-			std::cout << "Greedy\n";
-			return nullptr;
-		}
-	};
-
-	template <std::size_t ChunkSize>
-	class BalancedStoragePolicy
-	{
-	protected:
-		const char* execute(const char *str, std::size_t len, std::vector<detail::ChunkNode>& chunks ) const
-		{
-			std::cout << "Balanced\n";
-			return nullptr;
-		}
-	};
-
-	template <std::size_t ChunkSize>
-	class ConservativeStoragePolicy
-	{
-	protected:
-		const char* execute(const char *str, std::size_t len, std::vector<detail::ChunkNode>& chunks ) const
-		{
-			std::cout << "Conservative\n";
-			return nullptr;
-		}
-	};
-
-	template <std::size_t ChunkSize, template <std::size_t SizeType> class StoragePolicy = GreedyStoragePolicy>
-    class StringChunkManager : public StoragePolicy<ChunkSize>
+template <std::size_t ChunkSize>
+class ChunkNode
+{
+  public:
+    ChunkNode()
     {
-    public:
-    	const char* store(const char *str, std::size_t len)
-    	{
-    		return this->execute(str, len, m_chunks);
-    	}
+        m_buf.reset(new char[ChunkSize]);
+        m_cur = m_buf.get();
+    }
 
-    	const char* store(const char *str)
-    	{
-    		return store(str, std::strlen(str));
-    	}
+    // Suboptimal so deleted to detect
+    // inadvertent copying
+    ChunkNode(const ChunkNode &rhs) = delete;
+    ChunkNode &operator=(const ChunkNode &rhs) = delete;
 
-    	const char* store(const std::string& str)
-    	{
-    		return store(str.c_str(), str.size());
-    	}
+    ChunkNode(ChunkNode &&rhs) = default;
+    ChunkNode &operator=(ChunkNode &&rhs) = default;
 
-    private:
-    	std::vector<detail::ChunkNode> m_chunks;
-    };
+    size_t space() const { return m_buf.get() + ChunkSize - m_cur; }
+
+    const char *store(const char *const str, std::size_t len)
+    {
+        char *cur = m_cur;
+        std::memcpy(m_cur, str, len);
+        m_cur += len;
+        return cur;
+    }
+
+  private:
+    std::unique_ptr<char[]> m_buf;
+    char *m_cur;
+};
+
+} /* namespace detail */
+
+template <std::size_t ChunkSize, class NodeType>
+class GreedyStoragePolicy
+{
+  protected:
+    const char *execute(const char *str, std::size_t len, std::vector<NodeType> &chunks) const
+    {
+        auto &last = chunks.back();
+        if (last.space() >= len)
+        {
+            return last.store(str, len);
+        }
+        else
+        {
+            chunks.emplace_back(NodeType());
+            return chunks.back().store(str, len);
+        }
+    }
+
+    static const char *policy() { return "Greedy"; }
+};
+
+template <std::size_t ChunkSize, class NodeType>
+class BalancedStoragePolicy
+{
+  protected:
+    const char *execute(const char *str, std::size_t len, std::vector<NodeType> &chunks) const
+    {
+        auto &last = chunks.back();
+        if (last.space() >= len)
+        {
+            return last.store(str, len);
+        }
+        for (auto reverse_it = chunks.rbegin(); reverse_it != chunks.rend(); ++reverse_it)
+        {
+            if (reverse_it->space() >= len)
+            {
+                return reverse_it->store(str, len);
+            }
+        }
+        chunks.emplace_back(NodeType());
+
+        return chunks.back().store(str, len);
+    }
+
+    static const char *policy() { return "Balanced"; }
+};
+
+template <std::size_t ChunkSize, class NodeType>
+class ConservativeStoragePolicy
+{
+  protected:
+    const char *execute(const char *str, std::size_t len, std::vector<NodeType> &chunks) const
+    {
+        for (auto reverse_it = chunks.rbegin(); reverse_it != chunks.rend(); ++reverse_it)
+        {
+            if (reverse_it->space() >= len)
+            {
+                return reverse_it->store(str, len);
+            }
+        }
+        chunks.emplace_back(NodeType());
+
+        return chunks.back().store(str, len);
+    }
+
+    static const char *policy() { return "Conservative"; }
+};
+
+template <std::size_t ChunkSize,
+          template <std::size_t SizeType, class NodeType> class StoragePolicy = GreedyStoragePolicy>
+class StringChunkManager : public StoragePolicy<ChunkSize, detail::ChunkNode<ChunkSize>>
+{
+    using ChunkNodeType = detail::ChunkNode<ChunkSize>;
+    using ConcreteStoragePolicy = StoragePolicy<ChunkSize, ChunkNodeType>;
+
+  public:
+    StringChunkManager() { m_chunks.emplace_back(ChunkNodeType()); }
+
+    const char *store(const char *str, std::size_t len)
+    {
+        if ((len + 1) > ChunkSize)
+        {
+            return nullptr;
+        }
+        else
+        {
+            return ConcreteStoragePolicy::execute(str, len + 1, m_chunks);
+        }
+    }
+
+    const char *store(const char *str) { return store(str, std::strlen(str)); }
+
+    const char *store(const std::string &str) { return store(str.c_str(), str.size()); }
+
+    std::size_t num_chunks() const { return m_chunks.size(); }
+    std::size_t total_allocated() const
+    {
+        return num_chunks() * (sizeof(ChunkNodeType) + ChunkSize);
+    }
+
+    static const char *storage_policy() { return ConcreteStoragePolicy::policy(); }
+    static std::size_t chunk_size() { return ChunkSize; }
+
+  private:
+    std::vector<ChunkNodeType> m_chunks;
+};
 } /* namespace gen */
 
 #endif
