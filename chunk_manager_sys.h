@@ -26,10 +26,20 @@ class ChunkNode
     ChunkNode(const ChunkNode &rhs) = delete;
     ChunkNode &operator=(const ChunkNode &rhs) = delete;
 
-    ChunkNode(ChunkNode &&rhs) = default;
-    ChunkNode &operator=(ChunkNode &&rhs) = default;
+    ChunkNode(ChunkNode &&rhs)
+    {
+        m_buf = std::move(rhs.m_buf);
+        m_cur = rhs.m_cur;
+    }
 
-    size_t space() const { return m_buf.get() + ChunkSize - m_cur; }
+    ChunkNode &operator=(ChunkNode &&rhs)
+    {
+        m_buf = std::move(rhs.m_buf);
+        m_cur = rhs.m_cur;
+        return *this;
+    }
+
+    size_t capacity() const { return m_buf.get() + ChunkSize - m_cur; }
 
     const char *store(const char *const str, std::size_t len)
     {
@@ -53,7 +63,7 @@ class GreedyStoragePolicy
     const char *execute(const char *str, std::size_t len, std::vector<NodeType> &chunks) const
     {
         auto &last = chunks.back();
-        if (last.space() >= len)
+        if (last.capacity() >= len)
         {
             return last.store(str, len);
         }
@@ -74,13 +84,13 @@ class BalancedStoragePolicy
     const char *execute(const char *str, std::size_t len, std::vector<NodeType> &chunks) const
     {
         auto &last = chunks.back();
-        if (last.space() >= len)
+        if (last.capacity() >= len)
         {
             return last.store(str, len);
         }
         for (auto reverse_it = chunks.rbegin(); reverse_it != chunks.rend(); ++reverse_it)
         {
-            if (reverse_it->space() >= len)
+            if (reverse_it->capacity() >= len)
             {
                 return reverse_it->store(str, len);
             }
@@ -101,7 +111,7 @@ class ConservativeStoragePolicy
     {
         for (auto reverse_it = chunks.rbegin(); reverse_it != chunks.rend(); ++reverse_it)
         {
-            if (reverse_it->space() >= len)
+            if (reverse_it->capacity() >= len)
             {
                 return reverse_it->store(str, len);
             }
