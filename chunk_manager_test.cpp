@@ -65,7 +65,7 @@ int main()
     basic_tests(con_strings);
     basic_tests(bal_strings);
     basic_tests(gre_strings);
-    // Stress tests
+    
     stress_test(con_strings);
     stress_test(bal_strings);
     stress_test(gre_strings);
